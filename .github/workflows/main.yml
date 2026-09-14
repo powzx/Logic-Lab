@@ -1,0 +1,18 @@
+name: Key Swap
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Replaces the placeholder text with your GitHub Secret
+      - name: Inject Secret into HTML
+        run: |
+          sed -i 's/GOTCHUFAM/${{ secrets.API_KEY }}/g' index.html
