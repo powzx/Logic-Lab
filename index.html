@@ -33,7 +33,7 @@
         const { useState, useEffect, useRef } = React;
 
         // --- GEMINI API INTEGRATION ---
-        const apiKey = "AQ.Ab8RN6LIVSmgBcJf40Q-5U1TxqsM50wcQ53K0TnCJpdprg5L0A"; 
+        const apiKey = "${{secrets.API_KEY}}"; 
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
 
         async function fetchPedagogicalFeedback(context, studentError) {
