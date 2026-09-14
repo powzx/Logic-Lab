@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LogicLab - Master Boolean Logic</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .logic-btn { transition: all 0.2s; }
+        .logic-btn:hover { transform: translateY(-1px); }
+        .logic-btn:active { transform: translateY(1px); }
+        /* Custom scrollbar for tables */
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- GEMINI API INTEGRATION ---
+        const apiKey = "AQ.Ab8RN6LIVSmgBcJf40Q-5U1TxqsM50wcQ53K0TnCJpdprg5L0A"; 
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+        async function fetchPedagogicalFeedback(context, studentError) {
+            const systemPrompt = `You are an encouraging and expert Secondary 3 Computing teacher in Singapore teaching G3 students.
+            Your goal is to help students learn Boolean logic (Truth Tables and Sum of Products).
+            The student has just made a specific mistake.
+            CRITICAL RULES:
+            1. NEVER give the direct correct answer.
+            2. Use Socratic questioning to guide them to discover their error.
+            3. Keep your response very concise (under 40 words). 
+            4. Be encouraging and focus ONLY on the specific mistake provided in the prompt.`;
+
+            const userPrompt = `Context: ${context}\nStudent's specific error: ${studentError}\n\nProvide a short, guiding question to help them realize their mistake.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userPrompt }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (result.candidates && result.candidates.length > 0) {
+                    return result.candidates[0].content.parts[0].text;
+                }
+                return "Something went wrong. Let's look closely at your inputs again!";
+            } catch (error) {
+                console.error("Error fetching feedback:", error);
+                return "Think about the logic gates involved. Does your answer match the rules for those gates?";
+            }
+        }
+
+        // --- BOOLEAN EVALUATOR UTILITY ---
+        // Safely evaluates a boolean string with given variables
+        const evaluateBoolean = (expr, vars) => {
+            try {
+                let jsExpr = expr.toUpperCase()
+                    .replace(/[^A-Z() ]/g, '') // Sanitize
+                    .replace(/\bAND\b/g, '&&')
+                    .replace(/\bOR\b/g, '||')
+                    .replace(/\bNOT\s+([A-Z])/g, '!$1')
+                    .replace(/\bNOT\s*\(/g, '!(');
+                
+                const varNames = Object.keys(vars);
+                const varValues = Object.values(vars);
+                const fn = new Function(...varNames, `return !!(${jsExpr});`);
+                return fn(...varValues) ? 1 : 0;
+            } catch (e) {
+                return null;
+            }
+        };
+
+        // --- LEVEL DEFINITIONS ---
+        const mod1Levels = [
+            {
+                id: 1, title: "Level 1: The Basics", expression: "A OR B",
+                inputs: ["A", "B"], intermediates: [], output: "Y",
+                evaluator: (r) => ({ Y: (r.A || r.B) ? 1 : 0 })
+            },
+            {
+                id: 2, title: "Level 2: Adding NOT", expression: "NOT A AND B",
+                inputs: ["A", "B"], intermediates: ["NOT A"], output: "Y",
+                evaluator: (r) => {
+                    const notA = !r.A ? 1 : 0;
+                    return { "NOT A": notA, Y: (notA && r.B) ? 1 : 0 };
+                }
+            },
+            {
+                id: 3, title: "Level 3: Three Inputs", expression: "(A OR B) AND C",
+                inputs: ["A", "B", "C"], intermediates: ["A OR B"], output: "Y",
+                evaluator: (r) => {
+                    const aOrb = (r.A || r.B) ? 1 : 0;
+                    return { "A OR B": aOrb, Y: (aOrb && r.C) ? 1 : 0 };
+                }
+            },
+            {
+                id: 4, title: "Level 4: Complex Intermediates", expression: "NOT (A AND B) OR C",
+                inputs: ["A", "B", "C"], intermediates: ["A AND B", "NOT (A AND B)"], output: "Y",
+                evaluator: (r) => {
+                    const aAndB = (r.A && r.B) ? 1 : 0;
+                    const notAAndB = !aAndB ? 1 : 0;
+                    return { "A AND B": aAndB, "NOT (A AND B)": notAAndB, Y: (notAAndB || r.C) ? 1 : 0 };
+                }
+            }
+        ];
+
+        const mod2Levels = [
+            {
+                id: 1, title: "Level 1: A Single True", inputs: ["A", "B"],
+                table: [
+                    { A: 0, B: 0, Y: 0 }, { A: 0, B: 1, Y: 0 },
+                    { A: 1, B: 0, Y: 0 }, { A: 1, B: 1, Y: 1 }
+                ]
+            },
+            {
+                id: 2, title: "Level 2: Multiple Trues", inputs: ["A", "B"],
+                table: [
+                    { A: 0, B: 0, Y: 0 }, { A: 0, B: 1, Y: 1 },
+                    { A: 1, B: 0, Y: 1 }, { A: 1, B: 1, Y: 0 }
+                ]
+            },
+            {
+                id: 3, title: "Level 3: Three Inputs (SOP Challenge)", inputs: ["A", "B", "C"],
+                table: [
+                    { A: 0, B: 0, C: 0, Y: 0 }, { A: 0, B: 0, C: 1, Y: 1 },
+                    { A: 0, B: 1, C: 0, Y: 0 }, { A: 0, B: 1, C: 1, Y: 0 },
+                    { A: 1, B: 0, C: 0, Y: 1 }, { A: 1, B: 0, C: 1, Y: 0 },
+                    { A: 1, B: 1, C: 0, Y: 0 }, { A: 1, B: 1, C: 1, Y: 1 }
+                ]
+            }
+        ];
+
+        // --- COMPONENTS ---
+
+        const FeedbackPanel = ({ loading, feedback, status }) => {
+            const getIcon = () => {
+                if (loading) return <i data-lucide="loader-2" className="w-6 h-6 animate-spin text-blue-500"></i>;
+                if (status === 'success') return <i data-lucide="check-circle" className="w-6 h-6 text-green-500"></i>;
+                if (status === 'error') return <i data-lucide="help-circle" className="w-6 h-6 text-amber-500"></i>;
+                return <i data-lucide="bot" className="w-6 h-6 text-indigo-500"></i>;
+            };
+
+            useEffect(() => { lucide.createIcons(); }, [loading, status, feedback]);
+
+            return (
+                <div className={`p-4 rounded-xl border ${status === 'success' ? 'bg-green-50 border-green-200' : status === 'error' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'} shadow-sm flex items-start gap-4 transition-all duration-300`}>
+                    <div className="mt-1">{getIcon()}</div>
+                    <div className="flex-1">
+                        <h3 className="font-semibold text-slate-800 text-sm mb-1">AI Teacher Feedback</h3>
+                        <p className="text-slate-600 text-sm leading-relaxed">
+                            {loading ? "Thinking..." : feedback}
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
+        const ModuleOne = ({ level, onComplete }) => {
+            const [tableData, setTableData] = useState([]);
+            const [feedback, setFeedback] = useState("Fill in all the '?' cells and click Check!");
+            const [status, setStatus] = useState("idle");
+            const [loading, setLoading] = useState(false);
+
+            // Generate initial empty table based on inputs
+            useEffect(() => {
+                const rows = Math.pow(2, level.inputs.length);
+                const newData = [];
+                for (let i = 0; i < rows; i++) {
+                    let row = {};
+                    // Generate binary inputs (standard counting order)
+                    level.inputs.forEach((input, index) => {
+                        row[input] = (i >> (level.inputs.length - 1 - index)) & 1;
+                    });
+                    // Add empty intermediates and output
+                    level.intermediates.forEach(inter => row[inter] = "?");
+                    row[level.output] = "?";
+                    newData.push(row);
+                }
+                setTableData(newData);
+                setFeedback("Fill in all the '?' cells and click Check!");
+                setStatus("idle");
+            }, [level]);
+
+            const toggleCell = (rowIndex, colName) => {
+                const newData = [...tableData];
+                const current = newData[rowIndex][colName];
+                newData[rowIndex][colName] = current === "?" ? 0 : current === 0 ? 1 : "?";
+                setTableData(newData);
+                setStatus("idle");
+            };
+
+            const handleCheck = async () => {
+                setLoading(true);
+                let firstError = null;
+
+                for (let r = 0; r < tableData.length; r++) {
+                    const row = tableData[r];
+                    // Check if complete
+                    if (Object.values(row).includes("?")) {
+                        setFeedback("Please fill in all cells before checking.");
+                        setStatus("error");
+                        setLoading(false);
+                        return;
+                    }
+
+                    // Evaluate expected
+                    const expectedVals = level.evaluator(row);
+                    
+                    // Check intermediates first, then output
+                    for (const col of [...level.intermediates, level.output]) {
+                        if (row[col] !== expectedVals[col]) {
+                            const inputContext = level.inputs.map(i => `${i}=${row[i]}`).join(", ");
+                            firstError = {
+                                row: r, col: col,
+                                userVal: row[col], expectedVal: expectedVals[col],
+                                inputs: inputContext
+                            };
+                            break;
+                        }
+                    }
+                    if (firstError) break;
+                }
+
+                if (!firstError) {
+                    setFeedback("Excellent! You've successfully built the truth table.");
+                    setStatus("success");
+                    setTimeout(onComplete, 2000);
+                } else {
+                    setStatus("error");
+                    const context = `Student is building a truth table for the expression: ${level.expression}.`;
+                    const errorDesc = `For the row where ${firstError.inputs}, they evaluated the column '${firstError.col}' as ${firstError.userVal}, but it should be ${firstError.expectedVal}.`;
+                    const aiFeedback = await fetchPedagogicalFeedback(context, errorDesc);
+                    setFeedback(aiFeedback);
+                }
+                setLoading(false);
+            };
+
+            return (
+                <div className="space-y-6 animate-fadeIn">
+                    <div className="bg-indigo-600 text-white p-6 rounded-xl shadow-md text-center">
+                        <h2 className="text-xl font-medium opacity-90">{level.title}</h2>
+                        <div className="text-3xl font-bold mt-2 font-mono tracking-wider">{level.expression}</div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="overflow-x-auto custom-scrollbar">
+                            <table className="w-full text-center border-collapse">
+                                <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        {level.inputs.map(i => <th key={i} className="py-3 px-4 font-semibold text-slate-700 border-r border-slate-200">{i}</th>)}
+                                        {level.intermediates.map(i => <th key={i} className="py-3 px-4 font-semibold text-indigo-700 bg-indigo-50 border-r border-indigo-100">{i}</th>)}
+                                        <th className="py-3 px-4 font-semibold text-green-700 bg-green-50">{level.output}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {tableData.map((row, rIdx) => (
+                                        <tr key={rIdx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                            {level.inputs.map(col => (
+                                                <td key={col} className="py-3 px-4 border-r border-slate-200 font-mono text-slate-500">{row[col]}</td>
+                                            ))}
+                                            {level.intermediates.map(col => (
+                                                <td key={col} className="py-3 px-4 border-r border-slate-200 bg-indigo-50/30">
+                                                    <button onClick={() => toggleCell(rIdx, col)}
+                                                        className={`w-10 h-10 rounded-md font-mono font-bold text-lg logic-btn ${row[col] === '?' ? 'bg-white border-2 border-dashed border-indigo-300 text-indigo-300' : row[col] === 1 ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+                                                        {row[col]}
+                                                    </button>
+                                                </td>
+                                            ))}
+                                            <td className="py-3 px-4 bg-green-50/30">
+                                                <button onClick={() => toggleCell(rIdx, level.output)}
+                                                    className={`w-10 h-10 rounded-md font-mono font-bold text-lg logic-btn ${row[level.output] === '?' ? 'bg-white border-2 border-dashed border-green-300 text-green-300' : row[level.output] === 1 ? 'bg-green-600 text-white' : 'bg-green-100 text-green-800'}`}>
+                                                    {row[level.output]}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="flex justify-between items-start gap-6">
+                        <div className="flex-1">
+                            <FeedbackPanel loading={loading} feedback={feedback} status={status} />
+                        </div>
+                        <button onClick={handleCheck} disabled={loading}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-xl font-semibold shadow-md shadow-indigo-200 transition-colors disabled:opacity-50">
+                            Check Answers
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const ModuleTwo = ({ level, onComplete }) => {
+            const [step, setStep] = useState(1);
+            const [selectedRows, setSelectedRows] = useState([]);
+            const [rowExpressions, setRowExpressions] = useState({});
+            const [finalExpression, setFinalExpression] = useState("");
+            
+            const [feedback, setFeedback] = useState("Step 1: Select ALL the rows where the output Y is 1.");
+            const [status, setStatus] = useState("idle");
+            const [loading, setLoading] = useState(false);
+
+            useEffect(() => {
+                setStep(1);
+                setSelectedRows([]);
+                setRowExpressions({});
+                setFinalExpression("");
+                setFeedback("Step 1: Select ALL the rows where the output Y is 1.");
+                setStatus("idle");
+            }, [level]);
+
+            const handleRowSelect = (rIdx) => {
+                if (step !== 1) return;
+                setSelectedRows(prev => prev.includes(rIdx) ? prev.filter(i => i !== rIdx) : [...prev, rIdx].sort());
+            };
+
+            const handleStep1Check = async () => {
+                setLoading(true);
+                const correctRows = level.table.map((r, i) => r.Y === 1 ? i : -1).filter(i => i !== -1);
+                
+                const isCorrect = selectedRows.length === correctRows.length && 
+                                  selectedRows.every(r => correctRows.includes(r));
+                
+                if (isCorrect) {
+                    setStep(2);
+                    setStatus("success");
+                    setFeedback("Great! Step 2: For each row you selected, create an AND expression that equals 1 ONLY for that row. (Use AND, NOT)");
+                } else {
+                    setStatus("error");
+                    const context = "Student is learning the Sum of Products rule. They are at Step 1: Identifying rows where Output is 1.";
+                    const errorDesc = `The expected rows where Y=1 are ${correctRows.join(', ')}. The student selected rows ${selectedRows.length ? selectedRows.join(', ') : 'none'}.`;
+                    const aiFeedback = await fetchPedagogicalFeedback(context, errorDesc);
+                    setFeedback(aiFeedback);
+                }
+                setLoading(false);
+            };
+
+            const handleStep2Check = async () => {
+                setLoading(true);
+                let firstError = null;
+
+                for (let rIdx of selectedRows) {
+                    const expr = rowExpressions[rIdx] || "";
+                    if (!expr.trim()) {
+                        firstError = { type: 'empty', row: rIdx };
+                        break;
+                    }
+
+                    // To be a valid product term for this row, it MUST evaluate to 1 for this row, and 0 for ALL others.
+                    let isValidMinterm = true;
+                    for (let i = 0; i < level.table.length; i++) {
+                        const testRow = level.table[i];
+                        const val = evaluateBoolean(expr, testRow);
+                        
+                        if (val === null) {
+                            firstError = { type: 'syntax', row: rIdx, expr: expr };
+                            isValidMinterm = false; break;
+                        }
+                        if (i === rIdx && val !== 1) {
+                            firstError = { type: 'logic_self', row: rIdx, expr: expr, testRow };
+                            isValidMinterm = false; break;
+                        }
+                        if (i !== rIdx && val === 1) {
+                            firstError = { type: 'logic_other', row: rIdx, expr: expr, testRow };
+                            isValidMinterm = false; break;
+                        }
+                    }
+                    if (!isValidMinterm) break;
+                }
+
+                if (!firstError) {
+                    setStep(3);
+                    setStatus("success");
+                    setFeedback("Perfect! Step 3: Combine all your product terms using OR to create the final Sum of Products expression.");
+                } else {
+                    setStatus("error");
+                    const context = "Student is writing individual Product (AND) terms for specific truth table rows.";
+                    let errorDesc = "";
+                    if (firstError.type === 'empty') errorDesc = `They left the expression for row ${firstError.row + 1} empty.`;
+                    else if (firstError.type === 'syntax') errorDesc = `They wrote '${firstError.expr}' which has invalid syntax. Remind them to use A, B, C, AND, NOT.`;
+                    else if (firstError.type === 'logic_self') {
+                        const inputs = level.inputs.map(i => `${i}=${firstError.testRow[i]}`).join(', ');
+                        errorDesc = `For row where ${inputs}, they wrote '${firstError.expr}'. This evaluates to 0, but a product term must evaluate to 1 for its specific row. How do we handle 0 inputs?`;
+                    }
+                    else if (firstError.type === 'logic_other') {
+                        errorDesc = `Their term '${firstError.expr}' accidentally evaluates to 1 for another row too. It must be specific to ONLY one row by including all variables.`;
+                    }
+                    
+                    const aiFeedback = await fetchPedagogicalFeedback(context, errorDesc);
+                    setFeedback(aiFeedback);
+                }
+                setLoading(false);
+            };
+
+            const handleStep3Check = async () => {
+                setLoading(true);
+                if (!finalExpression.trim()) {
+                    setFeedback("Please write a final combined expression.");
+                    setStatus("error");
+                    setLoading(false);
+                    return;
+                }
+
+                let isValid = true;
+                let errorRow = null;
+                for (let i = 0; i < level.table.length; i++) {
+                    const row = level.table[i];
+                    const expected = row.Y;
+                    const val = evaluateBoolean(finalExpression, row);
+                    
+                    if (val === null) {
+                        setFeedback("Invalid syntax in your final expression. Make sure to use parentheses, AND, OR, NOT correctly.");
+                        setStatus("error");
+                        setLoading(false);
+                        return;
+                    }
+                    if (val !== expected) {
+                        isValid = false;
+                        errorRow = row;
+                        break;
+                    }
+                }
+
+                if (isValid) {
+                    setStatus("success");
+                    setFeedback("Outstanding! You've successfully discovered and applied the Sum of Products rule!");
+                    setTimeout(onComplete, 3000);
+                } else {
+                    setStatus("error");
+                    const context = "Student is combining product terms into a final Sum of Products expression.";
+                    const inputContext = level.inputs.map(i => `${i}=${errorRow[i]}`).join(', ');
+                    const errorDesc = `Their combined expression '${finalExpression}' evaluates incorrectly for the row where ${inputContext}. Expected output is ${errorRow.Y}. Did they use OR to combine the terms?`;
+                    const aiFeedback = await fetchPedagogicalFeedback(context, errorDesc);
+                    setFeedback(aiFeedback);
+                }
+                setLoading(false);
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
+                    {/* Left: Truth Table */}
+                    <div className="lg:col-span-5 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                        <div className="bg-slate-800 text-white py-3 px-4 text-center font-semibold tracking-wide">
+                            {level.title}
+                        </div>
+                        <div className="overflow-x-auto flex-1 custom-scrollbar">
+                            <table className="w-full text-center border-collapse">
+                                <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        {step === 1 && <th className="py-2 w-12 border-r border-slate-200">Select</th>}
+                                        {level.inputs.map(i => <th key={i} className="py-2 px-3 font-semibold text-slate-700 border-r border-slate-200">{i}</th>)}
+                                        <th className="py-2 px-3 font-semibold text-green-700 bg-green-50">Y</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {level.table.map((row, rIdx) => {
+                                        const isSelected = selectedRows.includes(rIdx);
+                                        const highlight = isSelected ? "bg-blue-50" : "";
+                                        return (
+                                            <tr key={rIdx} onClick={() => handleRowSelect(rIdx)} 
+                                                className={`border-b border-slate-100 transition-colors ${step === 1 ? 'cursor-pointer hover:bg-slate-50' : ''} ${highlight}`}>
+                                                {step === 1 && (
+                                                    <td className="py-2 border-r border-slate-200">
+                                                        <div className={`w-5 h-5 mx-auto rounded border ${isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white border-slate-300'}`}>
+                                                            {isSelected && <svg className="w-full h-full text-white p-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
+                                                        </div>
+                                                    </td>
+                                                )}
+                                                {level.inputs.map(col => (
+                                                    <td key={col} className={`py-2 px-3 border-r border-slate-200 font-mono ${row[col] ? 'text-slate-800 font-bold' : 'text-slate-400'}`}>{row[col]}</td>
+                                                ))}
+                                                <td className={`py-2 px-3 font-mono font-bold ${row.Y ? 'text-green-600 bg-green-100/50' : 'text-slate-400'}`}>{row.Y}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Right: Guided Steps */}
+                    <div className="lg:col-span-7 flex flex-col gap-4">
+                        
+                        {/* Step 1 Card */}
+                        <div className={`p-5 rounded-xl border ${step === 1 ? 'border-blue-400 shadow-md ring-2 ring-blue-100 bg-white' : 'border-slate-200 bg-slate-50 opacity-70'} transition-all`}>
+                            <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                                <span className="bg-blue-100 text-blue-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-sm">1</span> 
+                                Identify True Outcomes
+                            </h3>
+                            <p className="text-sm text-slate-600 mb-4">Click the checkboxes in the table to select all rows where the output (Y) is 1.</p>
+                            {step === 1 && (
+                                <button onClick={handleStep1Check} disabled={loading}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50">
+                                    Check Selection
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Step 2 Card */}
+                        {step >= 2 && (
+                            <div className={`p-5 rounded-xl border ${step === 2 ? 'border-indigo-400 shadow-md ring-2 ring-indigo-100 bg-white' : 'border-slate-200 bg-slate-50 opacity-70'} transition-all animate-fadeIn`}>
+                                <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                                    <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-sm">2</span> 
+                                    Create Product Terms (AND)
+                                </h3>
+                                <p className="text-sm text-slate-600 mb-3">For each selected row, write an expression using AND and NOT that equals 1 ONLY for that row. <br/><span className="italic text-xs text-slate-500">Hint: If an input is 0, use NOT. e.g., A AND NOT B</span></p>
+                                
+                                <div className="space-y-3 mb-4">
+                                    {selectedRows.map((rIdx) => {
+                                        const row = level.table[rIdx];
+                                        const conditions = level.inputs.map(i => `${i}=${row[i]}`).join(', ');
+                                        return (
+                                            <div key={rIdx} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 bg-slate-50 p-2 rounded border border-slate-200">
+                                                <div className="font-mono text-xs font-semibold text-slate-600 w-32 shrink-0">Row {rIdx + 1} ({conditions}):</div>
+                                                <input type="text" disabled={step !== 2}
+                                                    value={rowExpressions[rIdx] || ""}
+                                                    onChange={(e) => setRowExpressions(prev => ({...prev, [rIdx]: e.target.value.toUpperCase()}))}
+                                                    placeholder="e.g. NOT A AND B"
+                                                    className="flex-1 px-3 py-1.5 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono text-sm uppercase disabled:bg-slate-100"
+                                                />
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                                {step === 2 && (
+                                    <button onClick={handleStep2Check} disabled={loading}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50">
+                                        Verify Product Terms
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Step 3 Card */}
+                        {step >= 3 && (
+                            <div className={`p-5 rounded-xl border ${step === 3 ? 'border-green-400 shadow-md ring-2 ring-green-100 bg-white' : 'border-slate-200 bg-slate-50'} transition-all animate-fadeIn`}>
+                                <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                                    <span className="bg-green-100 text-green-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-sm">3</span> 
+                                    Sum of Products (OR)
+                                </h3>
+                                <p className="text-sm text-slate-600 mb-3">Combine all your valid product terms using OR to finish the equation.</p>
+                                
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="font-bold text-xl text-slate-700">Y =</div>
+                                    <textarea disabled={step !== 3}
+                                        value={finalExpression}
+                                        onChange={(e) => setFinalExpression(e.target.value.toUpperCase())}
+                                        placeholder="(NOT A AND B) OR (A AND NOT B)"
+                                        className="flex-1 px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-green-400 font-mono text-sm uppercase resize-none h-16 disabled:bg-slate-100"
+                                    ></textarea>
+                                </div>
+                                {step === 3 && (
+                                    <button onClick={handleStep3Check} disabled={loading}
+                                        className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50">
+                                        Check Final Equation
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="mt-auto pt-4">
+                            <FeedbackPanel loading={loading} feedback={feedback} status={status} />
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [module, setModule] = useState(1); // 1 = Exp to Table, 2 = Table to Exp
+            const [currentLevelIdx, setCurrentLevelIdx] = useState(0);
+
+            useEffect(() => {
+                // Ensure icons are injected on mount
+                lucide.createIcons();
+            }, [module, currentLevelIdx]);
+
+            const handleModuleSwitch = (modId) => {
+                setModule(modId);
+                setCurrentLevelIdx(0);
+            };
+
+            const levels = module === 1 ? mod1Levels : mod2Levels;
+            const currentLevel = levels[currentLevelIdx];
+
+            const handleLevelComplete = () => {
+                if (currentLevelIdx < levels.length - 1) {
+                    setCurrentLevelIdx(prev => prev + 1);
+                } else {
+                    // Completed module
+                    alert("Congratulations! You've mastered this module.");
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* Header */}
+                    <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-indigo-600">
+                                <i data-lucide="cpu" className="w-8 h-8"></i>
+                                <h1 className="text-xl font-bold tracking-tight">LogicLab</h1>
+                            </div>
+                            <nav className="flex bg-slate-100 p-1 rounded-lg">
+                                <button onClick={() => handleModuleSwitch(1)}
+                                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${module === 1 ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}>
+                                    Mod 1: Logic &rarr; Table
+                                </button>
+                                <button onClick={() => handleModuleSwitch(2)}
+                                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${module === 2 ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}>
+                                    Mod 2: Table &rarr; Logic
+                                </button>
+                            </nav>
+                        </div>
+                    </header>
+
+                    {/* Main Content */}
+                    <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8 flex flex-col gap-8">
+                        
+                        {/* Level Selector */}
+                        <div className="flex flex-wrap gap-3 items-center justify-center">
+                            <span className="text-slate-500 font-medium text-sm mr-2 uppercase tracking-wide">Select Level:</span>
+                            {levels.map((l, idx) => (
+                                <button key={l.id} 
+                                    onClick={() => setCurrentLevelIdx(idx)}
+                                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all border-2
+                                        ${idx === currentLevelIdx 
+                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-110' 
+                                            : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'}`}>
+                                    {idx + 1}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Active Module Area */}
+                        <div className="flex-1">
+                            {module === 1 ? (
+                                <ModuleOne key={`mod1-lvl${currentLevel.id}`} level={currentLevel} onComplete={handleLevelComplete} />
+                            ) : (
+                                <ModuleTwo key={`mod2-lvl${currentLevel.id}`} level={currentLevel} onComplete={handleLevelComplete} />
+                            )}
+                        </div>
+
+                    </main>
+                    
+                    {/* Syntax Helper Footer */}
+                    <footer className="bg-slate-800 text-slate-400 py-6 mt-auto">
+                        <div className="max-w-6xl mx-auto px-4 text-center text-sm">
+                            <p className="mb-2 text-slate-300 font-medium">Syntax Guide</p>
+                            <div className="flex flex-wrap justify-center gap-4 text-xs font-mono">
+                                <span className="bg-slate-700 px-2 py-1 rounded">AND</span>
+                                <span className="bg-slate-700 px-2 py-1 rounded">OR</span>
+                                <span className="bg-slate-700 px-2 py-1 rounded">NOT</span>
+                                <span className="bg-slate-700 px-2 py-1 rounded">( )</span>
+                            </div>
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+    
+    <style>
+        /* Fade In Animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+    </style>
+</body>
+</html>
