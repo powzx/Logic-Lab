@@ -90,15 +90,10 @@
             }
         };
 
-        // --- LEVEL DEFINITIONS ---
+        // --- MODULE 1 LEVEL DEFINITIONS ---
         const mod1Levels = [
             {
-                id: 1, title: "Level 1: The Basics", expression: "A OR B",
-                inputs: ["A", "B"], intermediates: [], output: "Y",
-                evaluator: (r) => ({ Y: (r.A || r.B) ? 1 : 0 })
-            },
-            {
-                id: 2, title: "Level 2: Adding NOT", expression: "NOT A AND B",
+                id: 1, title: "Level 1: Two Inputs with NOT", expression: "NOT A AND B",
                 inputs: ["A", "B"], intermediates: ["NOT A"], output: "Y",
                 evaluator: (r) => {
                     const notA = !r.A ? 1 : 0;
@@ -106,7 +101,7 @@
                 }
             },
             {
-                id: 3, title: "Level 3: Three Inputs", expression: "(A OR B) AND C",
+                id: 2, title: "Level 2: Three Inputs", expression: "(A OR B) AND C",
                 inputs: ["A", "B", "C"], intermediates: ["A OR B"], output: "Y",
                 evaluator: (r) => {
                     const aOrb = (r.A || r.B) ? 1 : 0;
@@ -114,41 +109,40 @@
                 }
             },
             {
-                id: 4, title: "Level 4: Complex Intermediates", expression: "NOT (A AND B) OR C",
+                id: 3, title: "Level 3: Negated Sub-expression", expression: "NOT (A AND B) OR C",
                 inputs: ["A", "B", "C"], intermediates: ["A AND B", "NOT (A AND B)"], output: "Y",
                 evaluator: (r) => {
                     const aAndB = (r.A && r.B) ? 1 : 0;
                     const notAAndB = !aAndB ? 1 : 0;
                     return { "A AND B": aAndB, "NOT (A AND B)": notAAndB, Y: (notAAndB || r.C) ? 1 : 0 };
                 }
+            },
+            {
+                id: 4, title: "Level 4: Compound Sub-expressions", expression: "(A OR B) AND (A OR C)",
+                inputs: ["A", "B", "C"], intermediates: ["A OR B", "A OR C"], output: "Y",
+                evaluator: (r) => {
+                    const aOrb = (r.A || r.B) ? 1 : 0;
+                    const aOrc = (r.A || r.C) ? 1 : 0;
+                    return { "A OR B": aOrb, "A OR C": aOrc, Y: (aOrb && aOrc) ? 1 : 0 };
+                }
             }
         ];
 
-        const mod2Levels = [
-            {
-                id: 1, title: "Level 1: A Single True", inputs: ["A", "B"],
-                table: [
-                    { A: 0, B: 0, Y: 0 }, { A: 0, B: 1, Y: 0 },
-                    { A: 1, B: 0, Y: 0 }, { A: 1, B: 1, Y: 1 }
-                ]
-            },
-            {
-                id: 2, title: "Level 2: Multiple Trues", inputs: ["A", "B"],
-                table: [
-                    { A: 0, B: 0, Y: 0 }, { A: 0, B: 1, Y: 1 },
-                    { A: 1, B: 0, Y: 1 }, { A: 1, B: 1, Y: 0 }
-                ]
-            },
-            {
-                id: 3, title: "Level 3: Three Inputs (SOP Challenge)", inputs: ["A", "B", "C"],
-                table: [
-                    { A: 0, B: 0, C: 0, Y: 0 }, { A: 0, B: 0, C: 1, Y: 1 },
-                    { A: 0, B: 1, C: 0, Y: 0 }, { A: 0, B: 1, C: 1, Y: 0 },
-                    { A: 1, B: 0, C: 0, Y: 1 }, { A: 1, B: 0, C: 1, Y: 0 },
-                    { A: 1, B: 1, C: 0, Y: 0 }, { A: 1, B: 1, C: 1, Y: 1 }
-                ]
-            }
-        ];
+        // --- MODULE 2 SPECIFICATION ---
+        const mod2TargetData = {
+            expression: "(NOT A AND B AND C) OR (A AND B AND NOT C)",
+            inputs: ["A", "B", "C"],
+            table: [
+                { A: 0, B: 0, C: 0, Y: 0 },
+                { A: 0, B: 0, C: 1, Y: 0 },
+                { A: 0, B: 1, C: 0, Y: 0 },
+                { A: 0, B: 1, C: 1, Y: 1 }, // Row index 3
+                { A: 1, B: 0, C: 0, Y: 0 },
+                { A: 1, B: 0, C: 1, Y: 0 },
+                { A: 1, B: 1, C: 0, Y: 1 }, // Row index 6
+                { A: 1, B: 1, C: 1, Y: 0 }
+            ]
+        };
 
         // --- COMPONENTS ---
 
@@ -181,17 +175,14 @@
             const [status, setStatus] = useState("idle");
             const [loading, setLoading] = useState(false);
 
-            // Generate initial empty table based on inputs
             useEffect(() => {
                 const rows = Math.pow(2, level.inputs.length);
                 const newData = [];
                 for (let i = 0; i < rows; i++) {
                     let row = {};
-                    // Generate binary inputs (standard counting order)
                     level.inputs.forEach((input, index) => {
                         row[input] = (i >> (level.inputs.length - 1 - index)) & 1;
                     });
-                    // Add empty intermediates and output
                     level.intermediates.forEach(inter => row[inter] = "?");
                     row[level.output] = "?";
                     newData.push(row);
@@ -215,7 +206,6 @@
 
                 for (let r = 0; r < tableData.length; r++) {
                     const row = tableData[r];
-                    // Check if complete
                     if (Object.values(row).includes("?")) {
                         setFeedback("Please fill in all cells before checking.");
                         setStatus("error");
@@ -223,10 +213,8 @@
                         return;
                     }
 
-                    // Evaluate expected
                     const expectedVals = level.evaluator(row);
                     
-                    // Check intermediates first, then output
                     for (const col of [...level.intermediates, level.output]) {
                         if (row[col] !== expectedVals[col]) {
                             const inputContext = level.inputs.map(i => `${i}=${row[i]}`).join(", ");
@@ -312,27 +300,35 @@
             );
         };
 
-        const ModuleTwo = ({ level, onComplete }) => {
+        const ModuleTwo = () => {
+            const level = mod2TargetData;
+            const [phase, setPhase] = useState(1); // 1 = Derive SOP, 2 = Reverse Verification, 3 = Reflection
             const [step, setStep] = useState(1);
             const [selectedRows, setSelectedRows] = useState([]);
             const [rowExpressions, setRowExpressions] = useState({});
             const [finalExpression, setFinalExpression] = useState("");
             
-            const [feedback, setFeedback] = useState("Step 1: Select ALL the rows where the output Y is 1.");
+            // Phase 2 state: Reverse truth table user input
+            const [reverseTable, setReverseTable] = useState([]);
+
+            const [feedback, setFeedback] = useState("Step 1: Select ALL the rows in the table where the output Y is 1.");
             const [status, setStatus] = useState("idle");
             const [loading, setLoading] = useState(false);
 
+            // Initialize reverse table when phase 2 begins
             useEffect(() => {
-                setStep(1);
-                setSelectedRows([]);
-                setRowExpressions({});
-                setFinalExpression("");
-                setFeedback("Step 1: Select ALL the rows where the output Y is 1.");
-                setStatus("idle");
-            }, [level]);
+                if (phase === 2) {
+                    const initTable = level.table.map(row => ({
+                        A: row.A, B: row.B, C: row.C, Y: "?"
+                    }));
+                    setReverseTable(initTable);
+                    setFeedback("Fill in the truth table for your derived SOP equation to test if it reproduces the original table!");
+                    setStatus("idle");
+                }
+            }, [phase]);
 
             const handleRowSelect = (rIdx) => {
-                if (step !== 1) return;
+                if (phase !== 1 || step !== 1) return;
                 setSelectedRows(prev => prev.includes(rIdx) ? prev.filter(i => i !== rIdx) : [...prev, rIdx].sort());
             };
 
@@ -350,7 +346,7 @@
                 } else {
                     setStatus("error");
                     const context = "Student is learning the Sum of Products rule. They are at Step 1: Identifying rows where Output is 1.";
-                    const errorDesc = `The expected rows where Y=1 are ${correctRows.join(', ')}. The student selected rows ${selectedRows.length ? selectedRows.join(', ') : 'none'}.`;
+                    const errorDesc = `The expected rows where Y=1 are rows 4 and 7 (0-indexed 3 and 6). The student selected rows ${selectedRows.length ? selectedRows.map(r=>r+1).join(', ') : 'none'}.`;
                     const aiFeedback = await fetchPedagogicalFeedback(context, errorDesc);
                     setFeedback(aiFeedback);
                 }
@@ -368,7 +364,6 @@
                         break;
                     }
 
-                    // To be a valid product term for this row, it MUST evaluate to 1 for this row, and 0 for ALL others.
                     let isValidMinterm = true;
                     for (let i = 0; i < level.table.length; i++) {
                         const testRow = level.table[i];
@@ -445,8 +440,7 @@
 
                 if (isValid) {
                     setStatus("success");
-                    setFeedback("Outstanding! You've successfully discovered and applied the Sum of Products rule!");
-                    setTimeout(onComplete, 3000);
+                    setFeedback("Awesome! You've derived the Sum of Products expression! Click 'Proceed to Reverse Verification' below to test if this formula creates the exact same truth table!");
                 } else {
                     setStatus("error");
                     const context = "Student is combining product terms into a final Sum of Products expression.";
@@ -458,142 +452,296 @@
                 setLoading(false);
             };
 
+            const toggleReverseCell = (rIdx) => {
+                const newData = [...reverseTable];
+                const current = newData[rIdx].Y;
+                newData[rIdx].Y = current === "?" ? 0 : current === 0 ? 1 : "?";
+                setReverseTable(newData);
+                setStatus("idle");
+            };
+
+            const handleReverseCheck = async () => {
+                setLoading(true);
+                for (let r = 0; r < reverseTable.length; r++) {
+                    if (reverseTable[r].Y === "?") {
+                        setFeedback("Please fill in all output cells (Y) before checking.");
+                        setStatus("error");
+                        setLoading(false);
+                        return;
+                    }
+                }
+
+                let firstError = null;
+                for (let r = 0; r < reverseTable.length; r++) {
+                    const row = reverseTable[r];
+                    const expected = level.table[r].Y;
+                    if (row.Y !== expected) {
+                        firstError = { row: r, userVal: row.Y, expectedVal: expected, rowInputs: `A=${row.A}, B=${row.B}, C=${row.C}` };
+                        break;
+                    }
+                }
+
+                if (!firstError) {
+                    setStatus("success");
+                    setFeedback("Incredible work! Notice how evaluating your SOP statement recreates the exact original truth table! Click 'Complete & Reflect' to view your final challenge.");
+                } else {
+                    setStatus("error");
+                    const context = `Student is constructing a truth table for their SOP expression: ${finalExpression || level.expression}.`;
+                    const errorDesc = `For row ${firstError.row + 1} (${firstError.rowInputs}), they filled Y=${firstError.userVal}, but the expression evaluates to ${firstError.expectedVal}.`;
+                    const aiFeedback = await fetchPedagogicalFeedback(context, errorDesc);
+                    setFeedback(aiFeedback);
+                }
+                setLoading(false);
+            };
+
             return (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
-                    {/* Left: Truth Table */}
-                    <div className="lg:col-span-5 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                        <div className="bg-slate-800 text-white py-3 px-4 text-center font-semibold tracking-wide">
-                            {level.title}
+                <div className="space-y-6 animate-fadeIn">
+
+                    {/* Progress Indicator Header */}
+                    <div className="bg-slate-800 text-white p-4 rounded-xl flex items-center justify-between shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <span className="font-bold text-indigo-400 font-mono text-lg">MODULE 2</span>
+                            <span className="text-slate-400">|</span>
+                            <span className="text-sm font-medium text-slate-200">
+                                {phase === 1 && "Part 1: Construct Expression from Truth Table (SOP)"}
+                                {phase === 2 && "Part 2: Reverse Verification (Expression → Table)"}
+                                {phase === 3 && "Part 3: Concept Reflection"}
+                            </span>
                         </div>
-                        <div className="overflow-x-auto flex-1 custom-scrollbar">
-                            <table className="w-full text-center border-collapse">
-                                <thead className="bg-slate-50 border-b border-slate-200">
-                                    <tr>
-                                        {step === 1 && <th className="py-2 w-12 border-r border-slate-200">Select</th>}
-                                        {level.inputs.map(i => <th key={i} className="py-2 px-3 font-semibold text-slate-700 border-r border-slate-200">{i}</th>)}
-                                        <th className="py-2 px-3 font-semibold text-green-700 bg-green-50">Y</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {level.table.map((row, rIdx) => {
-                                        const isSelected = selectedRows.includes(rIdx);
-                                        const highlight = isSelected ? "bg-blue-50" : "";
-                                        return (
-                                            <tr key={rIdx} onClick={() => handleRowSelect(rIdx)} 
-                                                className={`border-b border-slate-100 transition-colors ${step === 1 ? 'cursor-pointer hover:bg-slate-50' : ''} ${highlight}`}>
-                                                {step === 1 && (
-                                                    <td className="py-2 border-r border-slate-200">
-                                                        <div className={`w-5 h-5 mx-auto rounded border ${isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white border-slate-300'}`}>
-                                                            {isSelected && <svg className="w-full h-full text-white p-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
-                                                        </div>
-                                                    </td>
-                                                )}
-                                                {level.inputs.map(col => (
-                                                    <td key={col} className={`py-2 px-3 border-r border-slate-200 font-mono ${row[col] ? 'text-slate-800 font-bold' : 'text-slate-400'}`}>{row[col]}</td>
-                                                ))}
-                                                <td className={`py-2 px-3 font-mono font-bold ${row.Y ? 'text-green-600 bg-green-100/50' : 'text-slate-400'}`}>{row.Y}</td>
+                        <div className="flex gap-2">
+                            <span className={`w-3 h-3 rounded-full ${phase >= 1 ? 'bg-indigo-500' : 'bg-slate-600'}`}></span>
+                            <span className={`w-3 h-3 rounded-full ${phase >= 2 ? 'bg-indigo-500' : 'bg-slate-600'}`}></span>
+                            <span className={`w-3 h-3 rounded-full ${phase >= 3 ? 'bg-green-500' : 'bg-slate-600'}`}></span>
+                        </div>
+                    </div>
+
+                    {/* PHASE 1: Table to Logic */}
+                    {phase === 1 && (
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            {/* Left: Truth Table */}
+                            <div className="lg:col-span-5 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                                <div className="bg-indigo-700 text-white py-3 px-4 text-center font-semibold tracking-wide text-sm">
+                                    Target Truth Table
+                                </div>
+                                <div className="overflow-x-auto flex-1 custom-scrollbar">
+                                    <table className="w-full text-center border-collapse">
+                                        <thead className="bg-slate-50 border-b border-slate-200">
+                                            <tr>
+                                                {step === 1 && <th className="py-2 w-12 border-r border-slate-200">Select</th>}
+                                                {level.inputs.map(i => <th key={i} className="py-2 px-3 font-semibold text-slate-700 border-r border-slate-200">{i}</th>)}
+                                                <th className="py-2 px-3 font-semibold text-green-700 bg-green-50">Y</th>
                                             </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* Right: Guided Steps */}
-                    <div className="lg:col-span-7 flex flex-col gap-4">
-                        
-                        {/* Step 1 Card */}
-                        <div className={`p-5 rounded-xl border ${step === 1 ? 'border-blue-400 shadow-md ring-2 ring-blue-100 bg-white' : 'border-slate-200 bg-slate-50 opacity-70'} transition-all`}>
-                            <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                                <span className="bg-blue-100 text-blue-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-sm">1</span> 
-                                Identify True Outcomes
-                            </h3>
-                            <p className="text-sm text-slate-600 mb-4">Click the checkboxes in the table to select all rows where the output (Y) is 1.</p>
-                            {step === 1 && (
-                                <button onClick={handleStep1Check} disabled={loading}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50">
-                                    Check Selection
-                                </button>
-                            )}
-                        </div>
-
-                        {/* Step 2 Card */}
-                        {step >= 2 && (
-                            <div className={`p-5 rounded-xl border ${step === 2 ? 'border-indigo-400 shadow-md ring-2 ring-indigo-100 bg-white' : 'border-slate-200 bg-slate-50 opacity-70'} transition-all animate-fadeIn`}>
-                                <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                                    <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-sm">2</span> 
-                                    Create Product Terms (AND)
-                                </h3>
-                                <p className="text-sm text-slate-600 mb-3">For each selected row, write an expression using AND and NOT that equals 1 ONLY for that row. <br/><span className="italic text-xs text-slate-500">Hint: If an input is 0, use NOT. e.g., A AND NOT B</span></p>
-                                
-                                <div className="space-y-3 mb-4">
-                                    {selectedRows.map((rIdx) => {
-                                        const row = level.table[rIdx];
-                                        const conditions = level.inputs.map(i => `${i}=${row[i]}`).join(', ');
-                                        return (
-                                            <div key={rIdx} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 bg-slate-50 p-2 rounded border border-slate-200">
-                                                <div className="font-mono text-xs font-semibold text-slate-600 w-32 shrink-0">Row {rIdx + 1} ({conditions}):</div>
-                                                <input type="text" disabled={step !== 2}
-                                                    value={rowExpressions[rIdx] || ""}
-                                                    onChange={(e) => setRowExpressions(prev => ({...prev, [rIdx]: e.target.value.toUpperCase()}))}
-                                                    placeholder="e.g. NOT A AND B"
-                                                    className="flex-1 px-3 py-1.5 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono text-sm uppercase disabled:bg-slate-100"
-                                                />
-                                            </div>
-                                        )
-                                    })}
+                                        </thead>
+                                        <tbody>
+                                            {level.table.map((row, rIdx) => {
+                                                const isSelected = selectedRows.includes(rIdx);
+                                                const highlight = isSelected ? "bg-blue-50" : "";
+                                                return (
+                                                    <tr key={rIdx} onClick={() => handleRowSelect(rIdx)} 
+                                                        className={`border-b border-slate-100 transition-colors ${step === 1 ? 'cursor-pointer hover:bg-slate-50' : ''} ${highlight}`}>
+                                                        {step === 1 && (
+                                                            <td className="py-2 border-r border-slate-200">
+                                                                <div className={`w-5 h-5 mx-auto rounded border ${isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white border-slate-300'}`}>
+                                                                    {isSelected && <svg className="w-full h-full text-white p-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
+                                                                </div>
+                                                            </td>
+                                                        )}
+                                                        {level.inputs.map(col => (
+                                                            <td key={col} className={`py-2 px-3 border-r border-slate-200 font-mono ${row[col] ? 'text-slate-800 font-bold' : 'text-slate-400'}`}>{row[col]}</td>
+                                                        ))}
+                                                        <td className={`py-2 px-3 font-mono font-bold ${row.Y ? 'text-green-600 bg-green-100/50' : 'text-slate-400'}`}>{row.Y}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
                                 </div>
-                                {step === 2 && (
-                                    <button onClick={handleStep2Check} disabled={loading}
-                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50">
-                                        Verify Product Terms
+                            </div>
+
+                            {/* Right: Guided Steps */}
+                            <div className="lg:col-span-7 flex flex-col gap-4">
+                                {/* Step 1 Card */}
+                                <div className={`p-5 rounded-xl border ${step === 1 ? 'border-blue-400 shadow-md ring-2 ring-blue-100 bg-white' : 'border-slate-200 bg-slate-50 opacity-70'} transition-all`}>
+                                    <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                                        <span className="bg-blue-100 text-blue-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-sm">1</span> 
+                                        Identify True Outcomes
+                                    </h3>
+                                    <p className="text-sm text-slate-600 mb-4">Click the checkboxes in the table to select all rows where the output (Y) is 1.</p>
+                                    {step === 1 && (
+                                        <button onClick={handleStep1Check} disabled={loading}
+                                            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50">
+                                            Check Selection
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Step 2 Card */}
+                                {step >= 2 && (
+                                    <div className={`p-5 rounded-xl border ${step === 2 ? 'border-indigo-400 shadow-md ring-2 ring-indigo-100 bg-white' : 'border-slate-200 bg-slate-50 opacity-70'} transition-all animate-fadeIn`}>
+                                        <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                                            <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-sm">2</span> 
+                                            Create Product Terms (AND)
+                                        </h3>
+                                        <p className="text-sm text-slate-600 mb-3">For each selected row, write an expression using AND and NOT that equals 1 ONLY for that row. <br/><span className="italic text-xs text-slate-500">Hint: If an input is 0, use NOT. e.g., NOT A AND B AND C</span></p>
+                                        
+                                        <div className="space-y-3 mb-4">
+                                            {selectedRows.map((rIdx) => {
+                                                const row = level.table[rIdx];
+                                                const conditions = level.inputs.map(i => `${i}=${row[i]}`).join(', ');
+                                                return (
+                                                    <div key={rIdx} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 bg-slate-50 p-2 rounded border border-slate-200">
+                                                        <div className="font-mono text-xs font-semibold text-slate-600 w-32 shrink-0">Row {rIdx + 1} ({conditions}):</div>
+                                                        <input type="text" disabled={step !== 2}
+                                                            value={rowExpressions[rIdx] || ""}
+                                                            onChange={(e) => setRowExpressions(prev => ({...prev, [rIdx]: e.target.value.toUpperCase()}))}
+                                                            placeholder="e.g. NOT A AND B AND C"
+                                                            className="flex-1 px-3 py-1.5 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono text-sm uppercase disabled:bg-slate-100"
+                                                        />
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                        {step === 2 && (
+                                            <button onClick={handleStep2Check} disabled={loading}
+                                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50">
+                                                Verify Product Terms
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Step 3 Card */}
+                                {step >= 3 && (
+                                    <div className={`p-5 rounded-xl border ${step === 3 ? 'border-green-400 shadow-md ring-2 ring-green-100 bg-white' : 'border-slate-200 bg-slate-50'} transition-all animate-fadeIn`}>
+                                        <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                                            <span className="bg-green-100 text-green-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-sm">3</span> 
+                                            Sum of Products (OR)
+                                        </h3>
+                                        <p className="text-sm text-slate-600 mb-3">Combine all your valid product terms using OR to finish the equation.</p>
+                                        
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="font-bold text-xl text-slate-700">Y =</div>
+                                            <textarea disabled={step !== 3}
+                                                value={finalExpression}
+                                                onChange={(e) => setFinalExpression(e.target.value.toUpperCase())}
+                                                placeholder="(NOT A AND B AND C) OR (A AND B AND NOT C)"
+                                                className="flex-1 px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-green-400 font-mono text-sm uppercase resize-none h-16 disabled:bg-slate-100"
+                                            ></textarea>
+                                        </div>
+                                        {step === 3 && status !== "success" && (
+                                            <button onClick={handleStep3Check} disabled={loading}
+                                                className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50">
+                                                Check Final Equation
+                                            </button>
+                                        )}
+                                        {status === "success" && step === 3 && (
+                                            <button onClick={() => setPhase(2)}
+                                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold shadow-md transition-colors flex items-center gap-2">
+                                                Proceed to Reverse Verification &rarr;
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="mt-auto pt-2">
+                                    <FeedbackPanel loading={loading} feedback={feedback} status={status} />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* PHASE 2: Reverse Verification */}
+                    {phase === 2 && (
+                        <div className="space-y-6">
+                            <div className="bg-indigo-600 text-white p-6 rounded-xl shadow-md text-center">
+                                <h2 className="text-sm uppercase font-semibold tracking-wider opacity-80 mb-1">Verify Your Derived SOP Equation</h2>
+                                <div className="text-2xl font-bold font-mono tracking-wider">Y = {finalExpression || level.expression}</div>
+                                <p className="text-xs text-indigo-200 mt-2">Construct the truth table for this expression cell by cell to prove that SOP works!</p>
+                            </div>
+
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="overflow-x-auto custom-scrollbar">
+                                    <table className="w-full text-center border-collapse">
+                                        <thead className="bg-slate-50 border-b border-slate-200">
+                                            <tr>
+                                                {level.inputs.map(i => <th key={i} className="py-3 px-4 font-semibold text-slate-700 border-r border-slate-200">{i}</th>)}
+                                                <th className="py-3 px-4 font-semibold text-green-700 bg-green-50">Y (Your Output)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {reverseTable.map((row, rIdx) => (
+                                                <tr key={rIdx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                                    {level.inputs.map(col => (
+                                                        <td key={col} className="py-3 px-4 border-r border-slate-200 font-mono text-slate-500">{row[col]}</td>
+                                                    ))}
+                                                    <td className="py-3 px-4 bg-green-50/30">
+                                                        <button onClick={() => toggleReverseCell(rIdx)}
+                                                            className={`w-10 h-10 rounded-md font-mono font-bold text-lg logic-btn ${row.Y === '?' ? 'bg-white border-2 border-dashed border-green-300 text-green-300' : row.Y === 1 ? 'bg-green-600 text-white' : 'bg-green-100 text-green-800'}`}>
+                                                            {row.Y}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-between items-start gap-6">
+                                <div className="flex-1">
+                                    <FeedbackPanel loading={loading} feedback={feedback} status={status} />
+                                </div>
+                                {status !== "success" ? (
+                                    <button onClick={handleReverseCheck} disabled={loading}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-xl font-semibold shadow-md transition-colors disabled:opacity-50">
+                                        Verify Truth Table
+                                    </button>
+                                ) : (
+                                    <button onClick={() => setPhase(3)}
+                                        className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-xl font-semibold shadow-md transition-colors">
+                                        Complete & Reflect &rarr;
                                     </button>
                                 )}
                             </div>
-                        )}
-
-                        {/* Step 3 Card */}
-                        {step >= 3 && (
-                            <div className={`p-5 rounded-xl border ${step === 3 ? 'border-green-400 shadow-md ring-2 ring-green-100 bg-white' : 'border-slate-200 bg-slate-50'} transition-all animate-fadeIn`}>
-                                <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                                    <span className="bg-green-100 text-green-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-sm">3</span> 
-                                    Sum of Products (OR)
-                                </h3>
-                                <p className="text-sm text-slate-600 mb-3">Combine all your valid product terms using OR to finish the equation.</p>
-                                
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="font-bold text-xl text-slate-700">Y =</div>
-                                    <textarea disabled={step !== 3}
-                                        value={finalExpression}
-                                        onChange={(e) => setFinalExpression(e.target.value.toUpperCase())}
-                                        placeholder="(NOT A AND B) OR (A AND NOT B)"
-                                        className="flex-1 px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-green-400 font-mono text-sm uppercase resize-none h-16 disabled:bg-slate-100"
-                                    ></textarea>
-                                </div>
-                                {step === 3 && (
-                                    <button onClick={handleStep3Check} disabled={loading}
-                                        className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50">
-                                        Check Final Equation
-                                    </button>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="mt-auto pt-4">
-                            <FeedbackPanel loading={loading} feedback={feedback} status={status} />
                         </div>
-                    </div>
+                    )}
+
+                    {/* PHASE 3: Reflection Question */}
+                    {phase === 3 && (
+                        <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-8 text-center space-y-6 max-w-2xl mx-auto my-8 animate-fadeIn">
+                            <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-3xl font-bold shadow-inner">
+                                🤔
+                            </div>
+                            
+                            <h2 className="text-2xl font-bold text-slate-800">Final Reflection Challenge</h2>
+
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-left space-y-3">
+                                <h3 className="font-semibold text-amber-900 text-sm uppercase tracking-wide">Question for Class Discussion:</h3>
+                                <p className="text-amber-950 font-medium text-lg leading-relaxed">
+                                    Why does the Sum of Products (SOP) rule work? Why does combining individual AND terms with OR guarantee that the output matches the truth table every single time?
+                                </p>
+                            </div>
+
+                            <p className="text-slate-500 text-sm">
+                                Think about this question carefully! You don't need to type an answer here—your teacher will discuss this with you in class.
+                            </p>
+
+                            <button onClick={() => { setPhase(1); setStep(1); setSelectedRows([]); setRowExpressions({}); setFinalExpression(""); setStatus("idle"); setFeedback("Step 1: Select ALL the rows in the table where the output Y is 1."); }}
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+                                Restart Module 2
+                            </button>
+                        </div>
+                    )}
+
                 </div>
             );
         };
 
         const App = () => {
-            const [module, setModule] = useState(1); // 1 = Exp to Table, 2 = Table to Exp
+            const [module, setModule] = useState(1); // 1 = Exp to Table, 2 = Table to Exp (SOP Discovery)
             const [currentLevelIdx, setCurrentLevelIdx] = useState(0);
 
             useEffect(() => {
-                // Ensure icons are injected on mount
                 lucide.createIcons();
             }, [module, currentLevelIdx]);
 
@@ -602,15 +750,14 @@
                 setCurrentLevelIdx(0);
             };
 
-            const levels = module === 1 ? mod1Levels : mod2Levels;
+            const levels = mod1Levels;
             const currentLevel = levels[currentLevelIdx];
 
             const handleLevelComplete = () => {
                 if (currentLevelIdx < levels.length - 1) {
                     setCurrentLevelIdx(prev => prev + 1);
                 } else {
-                    // Completed module
-                    alert("Congratulations! You've mastered this module.");
+                    alert("Congratulations! You've completed all levels in Module 1.");
                 }
             };
 
@@ -630,7 +777,7 @@
                                 </button>
                                 <button onClick={() => handleModuleSwitch(2)}
                                     className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${module === 2 ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}>
-                                    Mod 2: Table &rarr; Logic
+                                    Mod 2: Table &rarr; Logic (SOP)
                                 </button>
                             </nav>
                         </div>
@@ -639,27 +786,35 @@
                     {/* Main Content */}
                     <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8 flex flex-col gap-8">
                         
-                        {/* Level Selector */}
-                        <div className="flex flex-wrap gap-3 items-center justify-center">
-                            <span className="text-slate-500 font-medium text-sm mr-2 uppercase tracking-wide">Select Level:</span>
-                            {levels.map((l, idx) => (
-                                <button key={l.id} 
-                                    onClick={() => setCurrentLevelIdx(idx)}
-                                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all border-2
-                                        ${idx === currentLevelIdx 
-                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-110' 
-                                            : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'}`}>
-                                    {idx + 1}
-                                </button>
-                            ))}
-                        </div>
+                        {/* Level Selector for Mod 1 or Info Badge for Mod 2 */}
+                        {module === 1 ? (
+                            <div className="flex flex-wrap gap-3 items-center justify-center">
+                                <span className="text-slate-500 font-medium text-sm mr-2 uppercase tracking-wide">Select Level:</span>
+                                {levels.map((l, idx) => (
+                                    <button key={l.id} 
+                                        onClick={() => setCurrentLevelIdx(idx)}
+                                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all border-2
+                                            ${idx === currentLevelIdx 
+                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-110' 
+                                                : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'}`}>
+                                        {idx + 1}
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="flex justify-center">
+                                <span className="bg-indigo-50 text-indigo-700 text-xs font-semibold px-4 py-1.5 rounded-full border border-indigo-200 shadow-sm uppercase tracking-wider">
+                                    Interactive Guided Discovery & Verification
+                                </span>
+                            </div>
+                        )}
 
                         {/* Active Module Area */}
                         <div className="flex-1">
                             {module === 1 ? (
                                 <ModuleOne key={`mod1-lvl${currentLevel.id}`} level={currentLevel} onComplete={handleLevelComplete} />
                             ) : (
-                                <ModuleTwo key={`mod2-lvl${currentLevel.id}`} level={currentLevel} onComplete={handleLevelComplete} />
+                                <ModuleTwo />
                             )}
                         </div>
 
